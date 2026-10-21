@@ -74,7 +74,8 @@
   <script>
     // A API Express do projeto está configurada para rodar, por padrão, na porta 3001.
     // Se necessário, altere esta URL para o endereço onde seu backend estiver publicado.
-    const API_BASE = window.ABP_API_BASE || (window.location.protocol === "file:" ? "http://localhost:3001/api" : "/api");
+    const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+    const API_BASE = window.ABP_API_BASE || (window.location.protocol === "file:" || (isLocalHost && window.location.port !== "3001") ? "http://localhost:3001/api" : "/api");
     const TOKEN_KEY = "abp_token";
     let token = sessionStorage.getItem(TOKEN_KEY);
     let currentQuestion = null;
