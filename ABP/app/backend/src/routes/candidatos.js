@@ -1,5 +1,5 @@
 import {Router} from "express";
-import {cadastrarCandidatoService} from "../services/candidatos.js";
+import { cadastrarCandidatoService, emitirCertificadoService } from "../services/candidatos.js";
 import autenticacao from "../middlewares/autenticacao.js";
 
 const rotas = Router();
