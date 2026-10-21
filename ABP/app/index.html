@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ABP | Área do candidato</title>
+  <style>
+    :root { color-scheme: light; --bg:#f4f7fb; --surface:#fff; --text:#172033; --muted:#64748b; --primary:#2457d6; --border:#dbe3ef; --danger:#b42318; --success:#067647; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+    header { background:#14284b; color:white; padding:22px 20px; }
+    header .inner, main { max-width:980px; margin:0 auto; }
+    header h1 { margin:0; font-size:1.35rem; }
+    header p { margin:5px 0 0; color:#d7e2f7; }
+    main { padding:28px 18px 48px; display:grid; gap:18px; }
+    .card { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:22px; box-shadow:0 4px 18px #162b4b0a; }
+    h2 { font-size:1.1rem; margin:0 0 16px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+    label { display:block; font-size:.9rem; font-weight:600; margin-bottom:6px; }
+    input { width:100%; padding:11px 12px; border:1px solid #cbd5e1; border-radius:9px; font:inherit; margin-bottom:12px; }
+    button { border:0; border-radius:9px; padding:11px 15px; background:var(--primary); color:white; font:inherit; font-weight:650; cursor:pointer; }
+    button.secondary { background:#e8eefb; color:#1c3d85; }
+    button:disabled { opacity:.55; cursor:not-allowed; }
+    .actions { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+    .muted { color:var(--muted); font-size:.92rem; }
+    #status { white-space:pre-wrap; padding:11px 13px; border-radius:9px; background:#eef2f8; color:#334155; }
+    #status.error { background:#fff0ef; color:var(--danger); }
+    #status.success { background:#eaf8f0; color:var(--success); }
+    #question-area:empty { display:none; }
+    .alternative { display:flex; gap:10px; align-items:flex-start; padding:12px; border:1px solid var(--border); border-radius:10px; margin:9px 0; cursor:pointer; }
+    .alternative input { width:auto; margin:4px 0 0; }
+    .hidden { display:none !important; }
+    ul { padding-left:20px; }
+    footer { text-align:center; color:var(--muted); font-size:.85rem; padding:0 18px 24px; }
+  </style>
+</head>
+<body>
+  <header><div class="inner"><h1>ABP — Área do candidato</h1><p>Acesse sua conta e acompanhe os temas e questões.</p></div></header>
+  <main>
+    <section class="card" id="auth-card">
+      <h2>Entrar</h2>
+      <form id="login-form">
+        <div class="grid">
+          <div><label for="login-cpf">CPF</label><input id="login-cpf" name="cpf" inputmode="numeric" autocomplete="username" required placeholder="Digite seu CPF"></div>
+          <div><label for="login-senha">Senha</label><input id="login-senha" name="senha" type="password" autocomplete="current-password" required placeholder="Digite sua senha"></div>
+        </div>
+        <div class="actions"><button type="submit">Entrar</button><button class="secondary" type="button" id="show-register">Criar cadastro</button></div>
+      </form>
+      <form id="register-form" class="hidden">
+        <h2 style="margin-top:22px">Cadastro</h2>
+        <div class="grid">
+          <div><label for="reg-nome">Nome</label><input id="reg-nome" name="nome" required></div>
+          <div><label for="reg-email">E-mail</label><input id="reg-email" name="email" type="email" required></div>
+          <div><label for="reg-cpf">CPF</label><input id="reg-cpf" name="cpf" inputmode="numeric" required></div>
+          <div><label for="reg-senha">Senha</label><input id="reg-senha" name="senha" type="password" required minlength="6"></div>
+        </div>
+        <div class="actions"><button type="submit">Cadastrar</button><button class="secondary" type="button" id="hide-register">Voltar ao login</button></div>
+      </form>
+    </section>
+
+    <section class="card hidden" id="app-card">
+      <div class="actions" style="justify-content:space-between">
+        <h2 style="margin:0">Painel do candidato</h2>
+        <button class="secondary" type="button" id="logout">Sair</button>
+      </div>
+      <div class="actions" style="margin:16px 0"><button type="button" id="load-themes" class="secondary">Ver temas</button><button type="button" id="draw-question">Sortear / continuar questão</button><button type="button" id="certificate" class="secondary">Solicitar certificado</button></div>
+      <div id="themes-area" class="muted"></div>
+      <div id="question-area"></div>
+    </section>
+    <div id="status" role="status" aria-live="polite">Conecte a API para começar. Endereço padrão: http://localhost:3001/api</div>
+  </main>
+  <footer>ABP • Interface conectada à API do projeto</footer>
+
+  <script>
+    // A API Express do projeto está configurada para rodar, por padrão, na porta 3001.
+    // Se necessário, altere esta URL para o endereço onde seu backend estiver publicado.
+    const API_BASE = window.ABP_API_BASE || "http://localhost:3001/api";
+    const TOKEN_KEY = "abp_token";
+    let token = sessionStorage.getItem(TOKEN_KEY);
+    let currentQuestion = null;
+
+    const $ = (selector) => document.querySelector(selector);
+    const status = $("#status");
+
+    function showStatus(message, type = "") {
+      status.textContent = message;
+      status.className = type;
+    }
+
+    async function api(path, options = {}) {
+      const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
+      if (token) headers.Authorization = "Bearer " + token;
+      let response;
+      try {
+        response = await fetch(API_BASE + path, { ...options, headers });
+      } catch (error) {
+        throw new Error("Não foi possível conectar à API em " + API_BASE + ". Confira se o backend está rodando e se o CORS está configurado, quando necessário.");
+      }
+      const contentType = response.headers.get("content-type") || "";
+      const data = contentType.includes("application/json") ? await response.json() : await response.text();
+      if (!response.ok) throw new Error(data?.error || data?.mensagem || ("Erro HTTP " + response.status));
+      return data;
+    }
+
+    function setLoggedIn(isLoggedIn) {
+      $("#auth-card").classList.toggle("hidden", isLoggedIn);
+      $("#app-card").classList.toggle("hidden", !isLoggedIn);
+    }
+
+    $("#login-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      try {
+        const result = await api("/login", { method: "POST", body: JSON.stringify({ cpf: form.get("cpf"), senha: form.get("senha") }) });
+        if (!result.token) throw new Error("A API não retornou um token de autenticação.");
+        token = result.token;
+        sessionStorage.setItem(TOKEN_KEY, token);
+        setLoggedIn(true);
+        showStatus("Login realizado com sucesso.", "success");
+        await loadThemes();
+      } catch (error) { showStatus(error.message, "error"); }
+    });
+
+    $("#show-register").addEventListener("click", () => $("#register-form").classList.remove("hidden"));
+    $("#hide-register").addEventListener("click", () => $("#register-form").classList.add("hidden"));
+
+    $("#register-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = new FormData(event.currentTarget);
+      try {
+        const result = await api("/candidatos", { method: "POST", body: JSON.stringify({
+          nome: form.get("nome"), email: form.get("email"), cpf: form.get("cpf"), senha: form.get("senha")
+        }) });
+        showStatus(result?.mensagem || "Cadastro enviado. Agora você pode entrar.", "success");
+        $("#register-form").reset();
+        $("#register-form").classList.add("hidden");
+      } catch (error) { showStatus(error.message, "error"); }
+    });
+
+    async function loadThemes() {
+      try {
+        const themes = await api("/temas");
+        const list = Array.isArray(themes) ? themes : (themes.temas || []);
+        $("#themes-area").innerHTML = "";
+        if (!list.length) { $("#themes-area").textContent = "Nenhum tema retornado pela API."; return; }
+        const title = document.createElement("h3");
+        title.textContent = "Temas disponíveis";
+        $("#themes-area").append(title);
+        const ul = document.createElement("ul");
+        list.forEach((theme) => {
+          const li = document.createElement("li");
+          li.textContent = (theme.ordem != null ? theme.ordem + ". " : "") + (theme.nome || ("Tema " + theme.id));
+          ul.append(li);
+        });
+        $("#themes-area").append(ul);
+        showStatus("Temas carregados.", "success");
+      } catch (error) { showStatus(error.message, "error"); }
+    }
+    $("#load-themes").addEventListener("click", loadThemes);
+
+    $("#draw-question").addEventListener("click", async () => {
+      try {
+        const result = await api("/questoes/sortear", { method: "POST", body: JSON.stringify({}) });
+        if (result.concluido || !result.questao) {
+          currentQuestion = null;
+          $("#question-area").textContent = "Não há mais questões disponíveis.";
+          showStatus("Você concluiu as questões disponíveis.", "success");
+          return;
+        }
+        currentQuestion = result.questao.questao || result.questao;
+        renderQuestion(currentQuestion);
+        showStatus("Questão carregada.", "success");
+      } catch (error) { showStatus(error.message, "error"); }
+    });
+
+    function renderQuestion(question) {
+      const area = $("#question-area");
+      area.replaceChildren();
+      const heading = document.createElement("h3");
+      heading.textContent = "Questão " + question.id;
+      const prompt = document.createElement("p");
+      prompt.textContent = question.enunciado || "Enunciado não informado.";
+      area.append(heading, prompt);
+      if (question.imagem_url) {
+        const img = document.createElement("img");
+        img.src = question.imagem_url;
+        img.alt = "Imagem da questão";
+        img.style.maxWidth = "100%";
+        img.style.borderRadius = "10px";
+        area.append(img);
+      }
+      const alternatives = Array.isArray(question.alternativas) ? question.alternativas : [];
+      const form = document.createElement("form");
+      form.id = "answer-form";
+      alternatives.forEach((alternative) => {
+        const label = document.createElement("label");
+        label.className = "alternative";
+        const input = document.createElement("input");
+        input.type = "radio";
+        input.name = "letra_resposta";
+        input.value = alternative.letra;
+        input.required = true;
+        const text = document.createElement("span");
+        text.textContent = (alternative.letra ? alternative.letra + ") " : "") + (alternative.texto || "");
+        label.append(input, text);
+        form.append(label);
+      });
+      const submit = document.createElement("button");
+      submit.type = "submit";
+      submit.textContent = "Enviar resposta";
+      form.append(submit);
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const selected = new FormData(form).get("letra_resposta");
+        try {
+          const result = await api("/questoes/" + encodeURIComponent(question.id) + "/responder", {
+            method: "POST", body: JSON.stringify({ letra_resposta: selected })
+          });
+          showStatus(result.erro || "Resposta registrada.", result.erro ? "error" : "success");
+          submit.disabled = true;
+          form.querySelectorAll("input").forEach((input) => input.disabled = true);
+        } catch (error) { showStatus(error.message, "error"); }
+      });
+      area.append(form);
+    }
+
+    $("#certificate").addEventListener("click", async () => {
+      try {
+        const result = await api("/candidatos/certificado", { method: "POST", body: JSON.stringify({}) });
+        showStatus(typeof result === "string" ? result : JSON.stringify(result, null, 2), "success");
+      } catch (error) { showStatus(error.message, "error"); }
+    });
+
+    $("#logout").addEventListener("click", () => {
+      token = null;
+      currentQuestion = null;
+      sessionStorage.removeItem(TOKEN_KEY);
+      $("#question-area").replaceChildren();
+      $("#themes-area").replaceChildren();
+      setLoggedIn(false);
+      showStatus("Você saiu da sua conta.");
+    });
+
+    setLoggedIn(Boolean(token));
+    if (token) loadThemes();
+  </script>
+</body>
+</html>
